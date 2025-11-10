@@ -10,6 +10,8 @@ members = [
     "crates/quill-cli",
     "examples/echo",
     "examples/streaming",
+    "examples/chat",
+    "examples/upload",
 ]
 
 [workspace.package]

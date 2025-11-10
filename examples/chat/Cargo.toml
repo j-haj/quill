@@ -1,0 +1,15 @@
+[package]
+name = "chat-example"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+quill-server = { workspace = true }
+quill-client = { workspace = true }
+quill-core = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { version = "0.1", features = ["sync"] }
+bytes = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
