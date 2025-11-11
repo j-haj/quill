@@ -1,0 +1,63 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: quill-service-config
+  namespace: default
+  labels:
+    app: quill-service
+data:
+  service.yaml: |
+    server:
+      host: "0.0.0.0"
+      port: 8080
+      http_version: "http2"
+      max_connections: 1000
+      http2_max_concurrent_streams: 200
+      http2_initial_connection_window_size: 1048576  # 1MB
+      http2_initial_stream_window_size: 1048576      # 1MB
+      http2_keep_alive_interval: 10s
+      http2_keep_alive_timeout: 20s
+
+    resilience:
+      retry_enabled: true
+      retry_max_attempts: 3
+      retry_initial_backoff: 100ms
+      retry_max_backoff: 30s
+      retry_backoff_multiplier: 2.0
+      retry_jitter: 0.1
+
+      circuit_breaker_enabled: true
+      circuit_breaker_failure_threshold: 5
+      circuit_breaker_success_threshold: 2
+      circuit_breaker_timeout: 60s
+      circuit_breaker_window_duration: 60s
+
+    observability:
+      metrics_enabled: true
+      tracing_enabled: true
+      log_level: "info"
+      otel_endpoint: "http://jaeger-collector:4317"
+
+    compression:
+      enabled: true
+      level: 3
+      threshold_bytes: 1024
+
+  logging.yaml: |
+    appenders:
+      stdout:
+        kind: console
+        encoder:
+          pattern: "{d(%Y-%m-%d %H:%M:%S)} [{l}] {t} - {m}{n}"
+
+    root:
+      level: info
+      appenders:
+        - stdout
+
+    loggers:
+      quill:
+        level: debug
+        appenders:
+          - stdout
+        additive: false

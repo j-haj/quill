@@ -215,11 +215,18 @@ cargo test --package echo-example
 - [x] Comprehensive test suite (14 tests)
 - [x] Resilience documentation
 
+### Phase 10: Production Deployment & Operations
+- [x] Comprehensive deployment guide
+- [x] Docker and Kubernetes examples
+- [x] Monitoring setup (Prometheus/Grafana)
+- [x] Security hardening best practices
+- [x] Complete deployment examples
+
 ### Next Steps
 
-- [ ] Add HTTP/3 Hyper profile
-- [ ] Production deployment guides
-- [ ] Enhanced observability (metrics dashboard, health checks)
+- [ ] Add HTTP/3 Hyper profile (QUIC support)
+- [ ] Enhanced observability (custom metrics, dashboards)
+- [ ] gRPC bridge implementation
 
 ## Documentation
 
@@ -232,6 +239,8 @@ cargo test --package echo-example
 - **[Performance](docs/performance.md)** - Benchmarks, optimization guide, performance budgets
 - **[HTTP/2](docs/http2.md)** - HTTP/2 configuration, Turbo profile, connection pooling
 - **[Resilience](docs/resilience.md)** - Retry policies and circuit breakers
+- **[Deployment](docs/deployment.md)** - Production deployment, Docker, Kubernetes, monitoring
+- **[Deployment Examples](deployment/examples/README.md)** - Ready-to-use Docker and K8s configs
 - **[CLI Tool](crates/quill-cli/README.md)** - CLI usage and examples
 
 ## Examples
