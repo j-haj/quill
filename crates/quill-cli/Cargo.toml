@@ -24,3 +24,5 @@ serde_json = { workspace = true }
 bytes = { workspace = true }
 futures = "0.3"
 url = "2.5"
+hdrhistogram = "7.5"
+serde_yaml = "0.9"

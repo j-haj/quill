@@ -6,7 +6,7 @@
 
 A modern, protobuf-first RPC framework with adaptive HTTP/1–3 transport (Prism), real HTTP errors, streaming that just works, and a single CLI for gen, call, and bench.
 
-📚 **[Documentation](https://your-org.github.io/quill/)** | 📖 **[API Reference](https://your-org.github.io/quill/quill_core/)** | 🎯 **[Examples](examples/)**
+**[Documentation](https://your-org.github.io/quill/)** | **[API Reference](https://your-org.github.io/quill/quill_core/)** | **[Examples](examples/)**
 
 ## Overview
 
@@ -27,8 +27,8 @@ Quill is a Rust implementation of a next-generation RPC framework featuring:
 - **quill-transport**: Transport layer implementations (Classic/Turbo/Hyper)
 - **quill-server**: Server SDK with routing, middleware, and streaming
 - **quill-client**: Client SDK with streaming, compression, and tracing
-- **quill-codegen**: Code generation (protoc plugin) ✅
-- **quill-cli**: CLI tool for gen/call/bench ✅
+- **quill-codegen**: Code generation (protoc plugin)
+- **quill-cli**: CLI tool for gen/call/bench
 
 ### Prism Transport Profiles
 
@@ -138,28 +138,34 @@ cargo test --package echo-example
 
 ## Features
 
-- ✅ **Streaming**: Unary, server streaming, client streaming, and bidirectional streaming
-- ✅ **Code Generation**: Automatic client and server stub generation from `.proto` files
-- ✅ **Middleware**: Compression (zstd), OpenTelemetry tracing, flow control
-- ✅ **CLI Tooling**: `quill` command for gen, call, bench, compat, and explain
-- ✅ **Type Safety**: Full Rust type safety with prost integration
-- ✅ **Error Handling**: Problem Details (RFC 7807) for structured errors
-- ✅ **Frame Protocol**: Custom framing with credit-based flow control
+- **Streaming**: Unary, server streaming, client streaming, and bidirectional streaming
+- **Code Generation**: Automatic client and server stub generation from `.proto` files
+- **Production Middleware**:
+  - Authentication (Bearer, API keys, Basic, custom)
+  - Rate limiting (token bucket algorithm)
+  - Request logging (with header sanitization)
+  - Metrics collection (requests, success/failure rates, bytes)
+  - Compression (zstd)
+  - OpenTelemetry tracing
+- **CLI Tooling**: `quill` command for gen, call, bench, compat, and explain
+- **Type Safety**: Full Rust type safety with prost integration
+- **Error Handling**: Problem Details (RFC 7807) for structured errors
+- **Frame Protocol**: Custom framing with credit-based flow control
 
 ## Project Status
 
-### ✅ Phase 1: Foundation
+### Phase 1: Foundation
 - [x] Core types (framing, Problem Details, Prism profiles)
 - [x] HTTP/1.1 transport layer
 - [x] Server routing and handlers
 - [x] Client implementation
 
-### ✅ Phase 2: Transport Layer
+### Phase 2: Transport Layer
 - [x] HTTP/1.1 Classic profile
 - [x] HTTP/2 preparation
 - [x] Router infrastructure
 
-### ✅ Phase 3: Streaming & Middleware
+### Phase 3: Streaming & Middleware
 - [x] Server streaming
 - [x] Client streaming
 - [x] Bidirectional streaming
@@ -169,27 +175,38 @@ cargo test --package echo-example
 - [x] Examples for all patterns
 - [x] Integration tests (88 tests passing)
 
-### ✅ Phase 4: Code Generation
+### Phase 4: Code Generation
 - [x] Protoc plugin infrastructure
 - [x] Client stub generation
 - [x] Server trait generation
 - [x] Greeter example
 
-### ✅ Phase 5: CLI Tooling
+### Phase 5: CLI Tooling
 - [x] `quill gen` - Code generation
 - [x] `quill call` - RPC client
 - [x] `quill bench` - Benchmarking (structured)
 - [x] `quill compat` - Compatibility checking (structured)
 - [x] `quill explain` - Payload decoding (structured)
 
-### 🚧 Next Steps
+### Phase 6: Production Middleware
+- [x] Authentication middleware (Bearer, API keys, Basic auth)
+- [x] Rate limiting (token bucket algorithm)
+- [x] Request logging (with sanitization)
+- [x] Metrics collection
+
+### Phase 7: Performance & Benchmarking
+- [x] Full `quill bench` implementation
+- [x] Criterion-based microbenchmarks
+- [x] Performance documentation
+- [x] Performance budget verification
+
+### Next Steps
 
 - [ ] Complete HTTP/2 full support
 - [ ] Add HTTP/3 Hyper profile
-- [ ] Implement full bench/compat/explain commands
-- [ ] Add authentication middleware
-- [ ] Performance benchmarks
 - [ ] Production deployment guides
+- [ ] Retry policies and circuit breakers
+- [ ] Connection pooling
 
 ## Documentation
 
@@ -198,6 +215,8 @@ cargo test --package echo-example
 - **[Flow Control](https://your-org.github.io/quill/guide/flow-control.md)** - Credit-based flow control
 - **[Compression](https://your-org.github.io/quill/guide/compression.md)** - zstd compression guide
 - **[Tracing](https://your-org.github.io/quill/guide/tracing.md)** - OpenTelemetry integration
+- **[Middleware](docs/middleware.md)** - Authentication, rate limiting, logging, metrics
+- **[Performance](docs/performance.md)** - Benchmarks, optimization guide, performance budgets
 - **[CLI Tool](crates/quill-cli/README.md)** - CLI usage and examples
 
 ## Examples

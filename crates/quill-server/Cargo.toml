@@ -33,3 +33,8 @@ tracing-opentelemetry = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "middleware_benchmark"
+harness = false
