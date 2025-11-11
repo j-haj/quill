@@ -174,7 +174,7 @@ cargo test --package echo-example
 - [x] zstd compression
 - [x] OpenTelemetry tracing
 - [x] Examples for all patterns
-- [x] Integration tests (116 tests passing)
+- [x] Integration tests (128 tests passing)
 
 ### Phase 4: Code Generation
 - [x] Protoc plugin infrastructure
@@ -230,10 +230,18 @@ cargo test --package echo-example
 - [x] Prometheus alerting rules (15+ alerts)
 - [x] Complete observability documentation
 
+### Phase 12: gRPC Bridge
+- [x] Status code mapping (gRPC ↔ HTTP)
+- [x] Problem Details conversion
+- [x] Metadata translation (binary and ASCII headers)
+- [x] Bridge configuration and unary call support
+- [x] Comprehensive test suite (12 tests)
+- [x] Complete documentation
+
 ### Next Steps
 
-- [ ] Add HTTP/3 Hyper profile (QUIC support)
-- [ ] gRPC bridge implementation
+- [ ] gRPC bridge streaming support (server, client, bidirectional)
+- [ ] HTTP/3 Hyper profile (QUIC support)
 - [ ] REST gateway with OpenAPI support
 
 ## Documentation
@@ -250,6 +258,7 @@ cargo test --package echo-example
 - **[Deployment](docs/deployment.md)** - Production deployment, Docker, Kubernetes, monitoring
 - **[Deployment Examples](deployment/examples/README.md)** - Ready-to-use Docker and K8s configs
 - **[Observability](docs/observability.md)** - Metrics, health checks, Grafana dashboards, alerting
+- **[gRPC Bridge](docs/grpc-bridge.md)** - gRPC interoperability, status mapping, metadata translation
 - **[CLI Tool](crates/quill-cli/README.md)** - CLI usage and examples
 
 ## Examples

@@ -8,6 +8,7 @@ members = [
     "crates/quill-client",
     "crates/quill-codegen",
     "crates/quill-cli",
+    "crates/quill-grpc-bridge",
     "examples/echo",
     "examples/streaming",
     "examples/chat",

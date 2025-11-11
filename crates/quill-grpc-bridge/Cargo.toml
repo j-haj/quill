@@ -1,0 +1,25 @@
+[package]
+name = "quill-grpc-bridge"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "gRPC to Quill protocol bridge"
+
+[dependencies]
+quill-core = { workspace = true }
+quill-client = { workspace = true }
+quill-server = { workspace = true }
+tokio = { workspace = true }
+tonic = "0.11"
+prost = "0.12"
+http = { workspace = true }
+bytes = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+base64-simd = "0.8"
+
+[dev-dependencies]
+tokio = { workspace = true }
