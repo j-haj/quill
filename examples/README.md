@@ -273,6 +273,67 @@ pub async fn handle_chat(
 
 ---
 
+### 7. gRPC Bridge (`examples/grpc-bridge`)
+
+**Pattern**: Protocol Bridge (gRPC → Quill)
+
+Demonstrates interoperability between gRPC clients and Quill services using the gRPC bridge.
+
+**Features**:
+- gRPC to Quill unary call bridging
+- Status code translation (gRPC ↔ HTTP)
+- Metadata/header forwarding
+- Problem Details error mapping
+
+**Use Case**:
+- Gradual migration from gRPC to Quill
+- Protocol gateway for gRPC-only clients
+- Hybrid architectures with both protocols
+
+**Architecture**:
+
+```
+┌─────────────┐         ┌─────────────┐         ┌──────────────┐
+│ gRPC Client │────────▶│ gRPC Bridge │────────▶│ Quill Server │
+└─────────────┘         └─────────────┘         └──────────────┘
+```
+
+**Code Highlights**:
+
+```rust
+use quill_grpc_bridge::{GrpcBridge, GrpcBridgeConfig};
+
+// Create bridge configuration
+let config = GrpcBridgeConfig {
+    quill_base_url: "http://localhost:8080".to_string(),
+    enable_logging: true,
+    forward_metadata: true,
+};
+
+let bridge = GrpcBridge::new(config)?;
+
+// Implement gRPC service that bridges to Quill
+#[tonic::async_trait]
+impl EchoService for EchoServiceBridge {
+    async fn echo(
+        &self,
+        request: tonic::Request<EchoRequest>,
+    ) -> Result<tonic::Response<EchoResponse>, tonic::Status> {
+        // Bridge the call to Quill
+        self.bridge
+            .call_unary("echo.v1.EchoService", "Echo", request)
+            .await
+    }
+}
+```
+
+**Requirements**:
+- `quill-grpc-bridge` crate
+- `tonic` for gRPC server implementation
+- Quill server running on backend
+
+---
+
 ## Running the Examples
 
 ### Build All Examples
@@ -290,6 +351,7 @@ cargo test -p upload-example
 cargo test -p chat-example
 cargo test -p h3-echo-example
 cargo test -p h3-streaming-example
+cargo test -p grpc-bridge-example
 ```
 
 ### Run Individual Examples

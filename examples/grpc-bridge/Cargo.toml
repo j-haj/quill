@@ -1,0 +1,28 @@
+[package]
+name = "grpc-bridge-example"
+version.workspace = true
+edition.workspace = true
+publish = false
+description = "gRPC to Quill bridge example demonstrating protocol interoperability"
+
+[dependencies]
+quill-grpc-bridge = { path = "../../crates/quill-grpc-bridge" }
+quill-server = { workspace = true }
+quill-client = { workspace = true }
+quill-core = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = "0.1"
+tonic = "0.11"
+prost = "0.12"
+bytes = { workspace = true }
+http = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+base64-simd = "0.8"
+
+[build-dependencies]
+tonic-build = "0.11"
+
+[[bin]]
+name = "grpc-bridge-server"
+path = "src/server.rs"
