@@ -24,6 +24,8 @@ tracing = { workspace = true }
 quinn = { workspace = true, optional = true }
 h3 = { workspace = true, optional = true }
 h3-quinn = { workspace = true, optional = true }
+h3-webtransport = { workspace = true, optional = true }
+h3-datagram = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
 rcgen = { version = "0.12", optional = true }
 futures = { version = "0.3", optional = true }
@@ -31,6 +33,7 @@ futures = { version = "0.3", optional = true }
 [features]
 default = []
 http3 = ["quinn", "h3", "h3-quinn", "rustls", "rcgen", "futures"]
+webtransport = ["http3", "h3-webtransport", "h3-datagram"]
 
 [dev-dependencies]
 tokio = { workspace = true }

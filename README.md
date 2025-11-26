@@ -283,14 +283,35 @@ cargo test --package echo-example
 - [x] Tensor chunking and reassembly for large tensors
 - [x] Test suite (28 quill-tensor tests, 6 new flow control tests)
 
+### Phase 16: HTTP/3 Datagrams
+- [x] Datagram type with payload and optional flow ID
+- [x] QUIC varint encoding/decoding for flow IDs
+- [x] DatagramSender and DatagramReceiver for async datagram I/O
+- [x] H3Connection for persistent connections with datagram support
+- [x] DatagramHandler trait for server-side datagram processing
+- [x] H3Server.serve_with_datagrams() for serving with datagram support
+- [x] Comprehensive datagram documentation
+
+### Phase 17: WebTransport Support
+- [x] WebTransport module with `webtransport` feature flag
+- [x] WebTransportConfig with HTTP/3 base and session settings
+- [x] Session and ClientSession types for session management
+- [x] BiStream and UniStream types for stream handling
+- [x] WebTransportHandler trait with FnWebTransportHandler helper
+- [x] WebTransportServerBuilder and WebTransportClientBuilder
+- [x] Datagram send/receive on sessions
+- [x] Browser JavaScript API documentation
+- [x] WebTransport example with Message protocol
+- [x] Comprehensive WebTransport documentation (docs/webtransport.md)
+
 ### Next Steps
 
-- [ ] WebTransport support for browser clients
-- [x] HTTP/3 datagrams for unreliable messaging
 - [ ] Python bindings via PyO3 + rust-numpy (Phase 2 tensor support)
 - [x] LLM inference example with token streaming
 - [x] gRPC bridge production examples and integration tests
 - [x] HTTP/3 examples (h3-echo, h3-streaming)
+- [x] WebTransport support for browser clients
+- [x] HTTP/3 datagrams for unreliable messaging
 
 ## Documentation
 
@@ -303,6 +324,7 @@ cargo test --package echo-example
 - **[Performance](docs/performance.md)** - Benchmarks, optimization guide, performance budgets
 - **[HTTP/2](docs/http2.md)** - HTTP/2 configuration, Turbo profile, connection pooling
 - **[HTTP/3](docs/http3.md)** - HTTP/3 over QUIC, Hyper profile, 0-RTT, datagrams, connection migration
+- **[WebTransport](docs/webtransport.md)** - WebTransport for browser clients, streams, and datagrams
 - **[Resilience](docs/resilience.md)** - Retry policies and circuit breakers
 - **[Deployment](docs/deployment.md)** - Production deployment, Docker, Kubernetes, monitoring
 - **[Deployment Examples](deployment/examples/README.md)** - Ready-to-use Docker and K8s configs
@@ -318,6 +340,10 @@ cargo test --package echo-example
 - **[upload](examples/upload/)** - Client streaming (file upload)
 - **[chat](examples/chat/)** - Bidirectional streaming (chat room)
 - **[greeter](examples/greeter/)** - Code generation example
+- **[h3-echo](examples/h3-echo/)** - HTTP/3 unary RPC
+- **[h3-streaming](examples/h3-streaming/)** - HTTP/3 server streaming
+- **[h3-datagram](examples/h3-datagram/)** - HTTP/3 datagrams
+- **[webtransport](examples/webtransport/)** - WebTransport with browser support
 
 ## Contributing
 
