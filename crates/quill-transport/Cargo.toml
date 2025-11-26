@@ -25,10 +25,12 @@ quinn = { workspace = true, optional = true }
 h3 = { workspace = true, optional = true }
 h3-quinn = { workspace = true, optional = true }
 rustls = { workspace = true, optional = true }
+rcgen = { version = "0.12", optional = true }
+futures = { version = "0.3", optional = true }
 
 [features]
 default = []
-http3 = ["quinn", "h3", "h3-quinn", "rustls"]
+http3 = ["quinn", "h3", "h3-quinn", "rustls", "rcgen", "futures"]
 
 [dev-dependencies]
 tokio = { workspace = true }

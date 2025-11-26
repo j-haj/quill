@@ -13,6 +13,7 @@ quill-core = { workspace = true }
 quill-client = { workspace = true }
 quill-server = { workspace = true }
 tokio = { workspace = true }
+tokio-stream = { workspace = true }
 tonic = "0.11"
 prost = "0.12"
 http = { workspace = true }
@@ -20,6 +21,7 @@ bytes = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 base64-simd = "0.8"
+async-stream = "0.3"
 
 [dev-dependencies]
 tokio = { workspace = true }

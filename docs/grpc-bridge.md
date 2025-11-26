@@ -159,6 +159,93 @@ let response = bridge.call_unary(
 ).await?;
 ```
 
+### Streaming Support
+
+The bridge supports all gRPC streaming patterns:
+
+#### Server Streaming
+
+Server sends multiple responses to client:
+
+```rust
+use tokio_stream::StreamExt;
+
+// Bridge server streaming call
+let mut stream = bridge.call_server_streaming::<MyRequest, MyResponse>(
+    "my.service.MyService",
+    "StreamResults",
+    request,
+).await?;
+
+// Process responses as they arrive
+while let Some(result) = stream.get_mut().next().await {
+    match result {
+        Ok(response) => {
+            // Handle response
+            println!("Received: {:?}", response);
+        }
+        Err(status) => {
+            eprintln!("Stream error: {}", status);
+            break;
+        }
+    }
+}
+```
+
+#### Client Streaming
+
+Client sends multiple requests, receives single response:
+
+```rust
+use tokio_stream::iter;
+
+// Create a stream of requests
+let requests = vec![req1, req2, req3];
+let request_stream = iter(requests);
+
+// Convert to gRPC Streaming
+let grpc_stream = tokio_stream::StreamExt::map(request_stream, Ok);
+
+// Bridge client streaming call
+let response = bridge.call_client_streaming::<MyRequest, MyResponse>(
+    "my.service.MyService",
+    "AggregateData",
+    Request::new(grpc_stream),
+).await?;
+```
+
+#### Bidirectional Streaming
+
+Both client and server stream:
+
+```rust
+use tokio_stream::StreamExt;
+
+// Create request stream
+let request_stream = /* your stream */;
+
+// Bridge bidirectional streaming call
+let mut response_stream = bridge.call_bidi_streaming::<MyRequest, MyResponse>(
+    "my.service.MyService",
+    "Chat",
+    Request::new(request_stream),
+).await?;
+
+// Process responses as they arrive
+while let Some(result) = response_stream.get_mut().next().await {
+    match result {
+        Ok(response) => {
+            // Handle response
+            println!("Received: {:?}", response);
+        }
+        Err(status) => {
+            eprintln!("Stream error: {}", status);
+            break;
+        }
+    }
+}
+```
+
 ## Use Cases
 
 ### 1. Gradual Migration from gRPC to Quill
@@ -291,18 +378,20 @@ spec:
 
 ### Current Implementation
 
-The bridge foundation is provided in `crates/quill-grpc-bridge` but requires further development:
+The bridge implementation in `crates/quill-grpc-bridge` provides comprehensive gRPC-Quill interoperability:
 
 **Completed:**
 - ✅ Status code mapping (gRPC ↔ HTTP)
 - ✅ Problem Details conversion
-- ✅ Metadata translation architecture
+- ✅ Metadata translation with binary encoding
 - ✅ Bridge configuration structure
-- ✅ Unary call bridging interface
+- ✅ Unary call bridging
+- ✅ Server streaming bridging
+- ✅ Client streaming bridging
+- ✅ Bidirectional streaming bridging
+- ✅ Comprehensive test suite (17 tests)
 
 **Requires Development:**
-- ⚠️ Full metadata binary encoding support
-- ⚠️ Streaming support (server, client, bidirectional)
 - ⚠️ Production testing and error handling
 - ⚠️ Performance optimization
 - ⚠️ Complete example services
@@ -336,32 +425,28 @@ For production use:
 
 Areas for enhancement:
 
-1. **Streaming Support**:
-   ```rust
-   // Server streaming
-   let stream = bridge.call_server_streaming(...).await?;
-
-   // Client streaming
-   let response = bridge.call_client_streaming(stream).await?;
-
-   // Bidirectional streaming
-   let bidi_stream = bridge.call_bidi_streaming(stream).await?;
-   ```
-
-2. **Advanced Error Mapping**:
+1. **Advanced Error Mapping**:
    - Custom error detail translation
    - Preserve error metadata
    - Stack trace forwarding
 
-3. **Performance Optimization**:
+2. **Performance Optimization**:
    - Connection pooling
    - Header caching
    - Zero-copy where possible
+   - Stream buffer optimization
 
-4. **Observability**:
+3. **Observability**:
    - Bridge-specific metrics
    - Tracing correlation
    - Error tracking
+   - Streaming backpressure metrics
+
+4. **Production Features**:
+   - Complete example services
+   - Integration tests with real gRPC services
+   - Load testing and benchmarks
+   - Best practices documentation
 
 ## See Also
 
