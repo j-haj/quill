@@ -10,7 +10,7 @@ pub fn generate_server(service: &Service, _config: &QuillConfig) -> Option<Strin
     let trait_name = format_ident!("{}", service.name);
     let server_mod_name = format_ident!("{}_server", service.name.to_snake_case());
 
-    let service_name = &service.name;
+    let _service_name = &service.name;
     let trait_methods = generate_trait_methods(service);
     let route_handlers = generate_route_handlers(service);
 
@@ -135,7 +135,7 @@ fn generate_route_handler(service_name: &str, method: &Method) -> proc_macro2::T
     let input_type_path = format!("super::{}", method.input_type);
     let output_type_path = format!("super::{}", method.output_type);
     let input_type: proc_macro2::TokenStream = input_type_path.parse().unwrap();
-    let output_type: proc_macro2::TokenStream = output_type_path.parse().unwrap();
+    let _output_type: proc_macro2::TokenStream = output_type_path.parse().unwrap();
 
     let rpc_method = &method.name;
 

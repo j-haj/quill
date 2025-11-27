@@ -10,7 +10,7 @@ pub fn generate_client(service: &Service, config: &QuillConfig) -> Option<String
     let client_name = format_ident!("{}Client", service.name);
     let client_mod_name = format_ident!("{}_client", service.name.to_snake_case());
 
-    let service_name = &service.name;
+    let _service_name = &service.name;
     let methods = generate_methods(service, config);
 
     let code = quote! {
