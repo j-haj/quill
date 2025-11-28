@@ -400,8 +400,11 @@ service ImageService {
 - [x] CORS middleware with origin validation and preflight handling
 - [x] Rate limiting middleware with token bucket algorithm
 - [x] Middleware composition and ordering
-- [x] Comprehensive test suite (30 tests)
-- [x] Complete REST gateway documentation (800+ lines)
+- [x] MessageConverter for JSON ↔ Protobuf conversion (prost-reflect)
+- [x] Full RPC invocation via handle_request
+- [x] Path parameter and query parameter merging
+- [x] Comprehensive test suite (41 tests)
+- [x] Complete REST gateway documentation (900+ lines)
 
 ### Phase 15: Tensor Support for ML Inference ✅
 - [x] Proto definitions (tensor.proto, inference.proto, agent.proto)
@@ -553,7 +556,8 @@ Flags: DATA (0x01), END_STREAM (0x02), CANCEL (0x04), CREDIT (0x08)
 - `crates/quill-grpc-bridge/src/bridge.rs` - gRPC bridge implementation
 - `crates/quill-rest-gateway/src/mapping.rs` - URL templates and HTTP method routing
 - `crates/quill-rest-gateway/src/openapi.rs` - OpenAPI 3.0 spec generation
-- `crates/quill-rest-gateway/src/router.rs` - REST gateway router and handler
+- `crates/quill-rest-gateway/src/router.rs` - REST gateway router and RPC handler
+- `crates/quill-rest-gateway/src/converter.rs` - JSON ↔ Protobuf conversion (MessageConverter)
 - `crates/quill-rest-gateway/src/error.rs` - Problem Details error mapping
 - `crates/quill-tensor/src/dtype.rs` - ML data types (f32, f16, bf16, etc.)
 - `crates/quill-tensor/src/tensor.rs` - Tensor, TensorMeta, TensorView types
@@ -605,7 +609,7 @@ Flags: DATA (0x01), END_STREAM (0x02), CANCEL (0x04), CREDIT (0x08)
 
 **HTTP/3**: Full Hyper profile transport implementation using quinn (QUIC) and h3 (HTTP/3). Server implementation uses quinn::Endpoint with h3::server::Connection for accepting requests via RequestResolver. Client implementation uses quinn::Connection with h3::client for sending requests and receiving responses. Supports 0-RTT for fast connection resumption, HTTP/3 datagrams for unreliable messaging, and connection migration for network changes. Uses ring crypto provider for TLS 1.3 with self-signed certificates for development. Feature-flagged via `http3` feature. **QuillH3Client** provides the same API as QuillClient (call, call_server_streaming, call_client_streaming, call_bidi_streaming) but uses HTTP/3 transport with Quill frame encoding/decoding. **QuillH3Server** serves RPC methods over HTTP/3 with the same handler registration pattern as QuillServer. See `docs/http3.md` for comprehensive guide with examples.
 
-**REST Gateway**: RESTful HTTP gateway for Quill RPC services with OpenAPI 3.0 support and production middleware. Provides clean URL templates with path parameter extraction, HTTP method routing (GET/POST/PUT/PATCH/DELETE), automatic OpenAPI spec generation, and Problem Details (RFC 7807) error responses. Includes authentication middleware (Bearer/API key/Basic/Custom), CORS middleware with origin validation, and token bucket rate limiting. Built on Axum with RestGatewayBuilder for easy setup. Full RPC-to-REST request/response conversion planned for future development. See `docs/rest-gateway.md` for complete guide.
+**REST Gateway**: RESTful HTTP gateway for Quill RPC services with OpenAPI 3.0 support, production middleware, and full RPC integration. Provides clean URL templates with path parameter extraction, HTTP method routing (GET/POST/PUT/PATCH/DELETE), automatic OpenAPI spec generation, and Problem Details (RFC 7807) error responses. The MessageConverter enables automatic JSON ↔ Protobuf conversion using prost-reflect for dynamic message reflection. Path and query parameters are merged into requests automatically. Includes authentication middleware (Bearer/API key/Basic/Custom), CORS middleware with origin validation, and token bucket rate limiting. Built on Axum with RestGatewayBuilder for easy setup. See `docs/rest-gateway.md` for complete guide.
 
 **Tensor Support**: First-class tensor and token streaming for LLM inference and agent-to-agent communication. The quill-tensor crate provides:
 - **Data Types**: Full ML data type support including f32, f64, f16 (IEEE), bf16 (bfloat16), i8, i32, i64, u8, and bool via the `half` crate

@@ -14,11 +14,13 @@ quill-client = { workspace = true }
 tokio = { workspace = true }
 axum = { workspace = true }
 http = { workspace = true }
+http-body-util = "0.1"
 bytes = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 prost = { workspace = true }
 prost-types = { workspace = true }
+prost-reflect = { version = "0.14", features = ["serde"] }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 base64 = "0.21"

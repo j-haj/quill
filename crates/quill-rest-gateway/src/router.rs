@@ -1,5 +1,6 @@
 //! REST gateway router
 
+use crate::converter::{merge_path_params, parse_query_params, MessageConverter};
 use crate::error::{GatewayError, GatewayResult};
 use crate::mapping::{HttpMethod, RouteMapping};
 use crate::openapi::{OpenApiSpec, OpenApiSpecBuilder};
@@ -11,8 +12,9 @@ use axum::{
     routing::{get, MethodRouter},
     Json, Router,
 };
+use http_body_util::BodyExt;
 use quill_client::QuillClient;
-use quill_core::ProblemDetails;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, error, info};
@@ -22,6 +24,7 @@ use tracing::{debug, error, info};
 struct GatewayState {
     client: Arc<QuillClient>,
     routes: Arc<Vec<RouteMapping>>,
+    converter: Option<Arc<MessageConverter>>,
 }
 
 /// REST gateway for Quill RPC services
@@ -55,6 +58,7 @@ pub struct RestGatewayBuilder {
     version: String,
     description: Option<String>,
     base_path: String,
+    converter: Option<MessageConverter>,
 }
 
 impl RestGatewayBuilder {
@@ -67,7 +71,23 @@ impl RestGatewayBuilder {
             version: "1.0.0".to_string(),
             description: None,
             base_path: "/api".to_string(),
+            converter: None,
         }
+    }
+
+    /// Set message converter from descriptor bytes
+    ///
+    /// This enables JSON ↔ Protobuf conversion for RPC calls.
+    /// Without a converter, the gateway can only forward raw bytes.
+    pub fn with_descriptor_bytes(mut self, descriptor_bytes: &[u8]) -> GatewayResult<Self> {
+        self.converter = Some(MessageConverter::from_bytes(descriptor_bytes)?);
+        Ok(self)
+    }
+
+    /// Set message converter directly
+    pub fn with_converter(mut self, converter: MessageConverter) -> Self {
+        self.converter = Some(converter);
+        self
     }
 
     /// Set API title
@@ -111,6 +131,7 @@ impl RestGatewayBuilder {
         let state = GatewayState {
             client: self.client.clone(),
             routes: Arc::new(self.routes.clone()),
+            converter: self.converter.clone().map(Arc::new),
         };
 
         // Build router with all routes
@@ -211,23 +232,99 @@ async fn handle_delete(
 
 /// Handle request and route to RPC
 async fn handle_request(
-    _state: GatewayState,
+    state: GatewayState,
     http_method: HttpMethod,
     params: HashMap<String, String>,
-    _req: Request<Body>,
+    req: Request<Body>,
 ) -> Result<Response, GatewayResponse> {
-    debug!("Handling {} request with params: {:?}", http_method.as_str(), params);
+    let path = req.uri().path().to_string();
+    let query = req.uri().query().map(|s| s.to_string());
 
-    // TODO: Implement actual RPC call logic
-    // For now, return a placeholder response
+    debug!(
+        "Handling {} request to {} with params: {:?}",
+        http_method.as_str(),
+        path,
+        params
+    );
 
-    let response = serde_json::json!({
-        "message": "REST gateway placeholder",
-        "method": http_method.as_str(),
-        "params": params,
-    });
+    // Find matching route
+    let route = find_matching_route(&state.routes, &path, http_method)?;
+    let service = &route.service;
+    let method = &route.method;
 
-    Ok(Json(response).into_response())
+    info!("Routing to {}/{}", service, method);
+
+    // Get the converter (required for JSON ↔ Protobuf conversion)
+    let converter = state
+        .converter
+        .as_ref()
+        .ok_or(GatewayError::NoConverter)?;
+
+    // Parse request body as JSON
+    let body_bytes = req
+        .into_body()
+        .collect()
+        .await
+        .map_err(|e| GatewayError::InvalidRequestBody(format!("Failed to read body: {}", e)))?
+        .to_bytes();
+
+    let mut json_body: Value = if body_bytes.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&body_bytes).map_err(|e| {
+            GatewayError::InvalidRequestBody(format!("Invalid JSON body: {}", e))
+        })?
+    };
+
+    // Merge path parameters into JSON body
+    merge_path_params(&mut json_body, &params)?;
+
+    // Merge query parameters for GET requests
+    if http_method == HttpMethod::Get {
+        let query_params = parse_query_params(query.as_deref());
+        merge_path_params(&mut json_body, &query_params)?;
+    }
+
+    debug!("Request JSON: {:?}", json_body);
+
+    // Convert JSON to Protobuf
+    let request_bytes = converter.json_to_proto(service, method, &json_body)?;
+
+    // Make RPC call
+    let response_bytes = state
+        .client
+        .call(service, method, request_bytes)
+        .await
+        .map_err(|e| GatewayError::RpcCall(e.to_string()))?;
+
+    // Convert Protobuf response to JSON
+    let response_json = converter.proto_to_json(service, method, &response_bytes)?;
+
+    debug!("Response JSON: {:?}", response_json);
+
+    // Return JSON response
+    Ok(Json(response_json).into_response())
+}
+
+/// Find matching route for the given path and HTTP method
+fn find_matching_route<'a>(
+    routes: &'a [RouteMapping],
+    path: &str,
+    http_method: HttpMethod,
+) -> GatewayResult<&'a RouteMapping> {
+    for route in routes {
+        for mapping in &route.http_mappings {
+            if mapping.http_method == http_method && mapping.url_template.matches(path) {
+                return Ok(route);
+            }
+        }
+    }
+
+    Err(GatewayError::RouteNotFound(format!(
+        "{} {}",
+        http_method.as_str(),
+        path
+    )))
 }
 
 /// Gateway response wrapper for error handling
@@ -294,5 +391,119 @@ mod tests {
         let json = gateway.openapi_json();
         assert!(json.is_ok());
         assert!(json.unwrap().contains("openapi"));
+    }
+
+    #[test]
+    fn test_find_matching_route() {
+        let routes = vec![
+            RouteMapping::new("users.v1.UserService", "GetUser")
+                .add_mapping(HttpMethod::Get, "/v1/users/{id}")
+                .unwrap(),
+            RouteMapping::new("users.v1.UserService", "CreateUser")
+                .add_mapping(HttpMethod::Post, "/v1/users")
+                .unwrap(),
+            RouteMapping::new("posts.v1.PostService", "GetPost")
+                .add_mapping(HttpMethod::Get, "/v1/posts/{id}")
+                .unwrap(),
+        ];
+
+        // Test matching GET /v1/users/123
+        let result = find_matching_route(&routes, "/v1/users/123", HttpMethod::Get);
+        assert!(result.is_ok());
+        let route = result.unwrap();
+        assert_eq!(route.service, "users.v1.UserService");
+        assert_eq!(route.method, "GetUser");
+
+        // Test matching POST /v1/users
+        let result = find_matching_route(&routes, "/v1/users", HttpMethod::Post);
+        assert!(result.is_ok());
+        let route = result.unwrap();
+        assert_eq!(route.method, "CreateUser");
+
+        // Test matching GET /v1/posts/456
+        let result = find_matching_route(&routes, "/v1/posts/456", HttpMethod::Get);
+        assert!(result.is_ok());
+        let route = result.unwrap();
+        assert_eq!(route.service, "posts.v1.PostService");
+    }
+
+    #[test]
+    fn test_find_matching_route_not_found() {
+        let routes = vec![
+            RouteMapping::new("users.v1.UserService", "GetUser")
+                .add_mapping(HttpMethod::Get, "/v1/users/{id}")
+                .unwrap(),
+        ];
+
+        // Test non-existent path
+        let result = find_matching_route(&routes, "/v1/unknown/123", HttpMethod::Get);
+        assert!(result.is_err());
+        match result {
+            Err(GatewayError::RouteNotFound(_)) => {}
+            _ => panic!("Expected RouteNotFound error"),
+        }
+
+        // Test wrong HTTP method
+        let result = find_matching_route(&routes, "/v1/users/123", HttpMethod::Delete);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_find_matching_route_multiple_methods() {
+        let routes = vec![
+            RouteMapping::new("users.v1.UserService", "GetUser")
+                .add_mapping(HttpMethod::Get, "/v1/users/{id}")
+                .unwrap()
+                .add_mapping(HttpMethod::Delete, "/v1/users/{id}")
+                .unwrap(),
+        ];
+
+        // Test GET matches
+        let result = find_matching_route(&routes, "/v1/users/123", HttpMethod::Get);
+        assert!(result.is_ok());
+
+        // Test DELETE matches same route
+        let result = find_matching_route(&routes, "/v1/users/456", HttpMethod::Delete);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_gateway_with_base_path() {
+        let client = ClientBuilder::new()
+            .base_url("http://localhost:8080")
+            .build()
+            .unwrap();
+
+        let route = RouteMapping::new("users.v1.UserService", "GetUser")
+            .add_mapping(HttpMethod::Get, "/users/{id}")
+            .unwrap();
+
+        let _gateway = RestGatewayBuilder::new(client)
+            .base_path("/api/v2")
+            .route(route)
+            .build();
+
+        // The gateway should prefix routes with /api/v2
+    }
+
+    #[test]
+    fn test_gateway_error_to_problem_details() {
+        let err = GatewayError::RouteNotFound("/api/v1/unknown".to_string());
+        let problem = err.to_problem_details();
+        assert_eq!(problem.status, 404);
+        assert_eq!(problem.title, "Route Not Found");
+
+        let err = GatewayError::RpcNotFound("Service.Method".to_string());
+        let problem = err.to_problem_details();
+        assert_eq!(problem.status, 404);
+        assert_eq!(problem.title, "RPC Not Found");
+
+        let err = GatewayError::RpcCall("Connection refused".to_string());
+        let problem = err.to_problem_details();
+        assert_eq!(problem.status, 500);
+
+        let err = GatewayError::NoConverter;
+        let problem = err.to_problem_details();
+        assert_eq!(problem.status, 500);
     }
 }

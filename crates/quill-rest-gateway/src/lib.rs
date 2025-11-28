@@ -9,12 +9,14 @@
 //! - Problem Details error responses
 //! - Authentication, CORS, and rate limiting middleware
 
+pub mod converter;
 pub mod error;
 pub mod mapping;
 pub mod middleware;
 pub mod openapi;
 pub mod router;
 
+pub use converter::MessageConverter;
 pub use error::{GatewayError, GatewayResult};
 pub use mapping::{HttpMethodMapping, RouteMapping, UrlTemplate};
 pub use middleware::{AuthConfig, AuthMiddleware, CorsConfig, CorsMiddleware, RateLimitConfig, RateLimitMiddleware};

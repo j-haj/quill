@@ -10,8 +10,11 @@ This guide covers the REST gateway for Quill RPC services, which provides RESTfu
 - [HTTP Method Routing](#http-method-routing)
 - [OpenAPI Specification](#openapi-specification)
 - [Error Handling](#error-handling)
+- [Message Converter](#message-converter)
 - [Examples](#examples)
 - [Best Practices](#best-practices)
+- [Middleware](#middleware)
+- [Security Considerations](#security-considerations)
 
 ## Overview
 
@@ -75,6 +78,60 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+```
+
+### With JSON ↔ Protobuf Conversion
+
+To enable automatic JSON to Protobuf conversion, provide a protobuf descriptor set:
+
+```rust
+use quill_rest_gateway::{RestGatewayBuilder, RouteMapping, HttpMethod};
+use quill_client::client::ClientBuilder;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Load descriptor set (generated with protoc --descriptor_set_out=api.pb)
+    let descriptor_bytes = std::fs::read("api.pb")?;
+
+    // Create Quill client
+    let client = ClientBuilder::new()
+        .base_url("http://localhost:8080")
+        .build()?;
+
+    // Define REST routes
+    let routes = vec![
+        RouteMapping::new("users.v1.UserService", "GetUser")
+            .add_mapping(HttpMethod::Get, "/v1/users/{id}")?,
+    ];
+
+    // Build REST gateway with converter
+    let gateway = RestGatewayBuilder::new(client)
+        .with_descriptor_bytes(&descriptor_bytes)?  // Enable JSON ↔ Protobuf
+        .title("User API")
+        .version("1.0.0")
+        .routes(routes)
+        .build();
+
+    let app = gateway.router();
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
+    axum::serve(listener, app).await?;
+
+    Ok(())
+}
+```
+
+**Generating Descriptor Sets**:
+
+```bash
+# Single file
+protoc --descriptor_set_out=api.pb --include_imports api.proto
+
+# Multiple files
+protoc --descriptor_set_out=all.pb --include_imports \
+  -I./proto ./proto/**/*.proto
+
+# With buf
+buf build -o api.pb
 ```
 
 ### Making REST Calls
@@ -313,7 +370,9 @@ All errors return Problem Details JSON:
 | `invalid-request` | 400 | Malformed request body |
 | `invalid-path-param` | 400 | Invalid path parameter |
 | `missing-field` | 400 | Required field missing |
+| `rpc-not-found` | 404 | RPC service or method not found |
 | `rpc-error` | 500 | RPC call failed |
+| `no-converter` | 500 | No message converter configured |
 | `internal-error` | 500 | Gateway internal error |
 
 ### Error Handling Example
@@ -335,6 +394,60 @@ $ curl -X POST http://localhost:3000/api/v1/users/123
   "title": "Method Not Allowed",
   "status": 405,
   "detail": "POST not allowed for path: /api/v1/users/123"
+}
+```
+
+## Message Converter
+
+The `MessageConverter` enables automatic JSON ↔ Protobuf conversion using dynamic message reflection via `prost-reflect`.
+
+### How It Works
+
+1. **Request Flow**: JSON request body → Protobuf bytes → RPC call
+2. **Response Flow**: RPC response (Protobuf) → JSON response
+
+### Configuration
+
+```rust
+use quill_rest_gateway::MessageConverter;
+
+// Create from descriptor bytes
+let converter = MessageConverter::from_bytes(&descriptor_bytes)?;
+
+// Use with gateway builder
+let gateway = RestGatewayBuilder::new(client)
+    .with_converter(converter)  // Or use with_descriptor_bytes()
+    .routes(routes)
+    .build();
+```
+
+### Parameter Handling
+
+**Path Parameters**: Automatically merged into the request JSON:
+
+```
+URL: /v1/users/123
+Request body: {"name": "Alice"}
+Merged request: {"id": "123", "name": "Alice"}
+```
+
+**Query Parameters** (GET requests): Also merged into request:
+
+```
+URL: /v1/users?limit=10&offset=0
+Merged request: {"limit": "10", "offset": "0"}
+```
+
+### Without Converter
+
+Without a converter configured, the gateway will return a `no-converter` error:
+
+```json
+{
+  "type": "urn:quill:rest-gateway:no-converter",
+  "title": "Converter Not Configured",
+  "status": 500,
+  "detail": "No message converter configured for JSON/Protobuf conversion"
 }
 ```
 

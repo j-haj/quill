@@ -1,7 +1,6 @@
 //! Error types for REST gateway
 
 use quill_core::ProblemDetails;
-use std::fmt;
 use thiserror::Error;
 
 /// REST gateway errors
@@ -28,11 +27,20 @@ pub enum GatewayError {
     #[error("RPC call failed: {0}")]
     RpcCall(String),
 
+    #[error("RPC not found: {0}")]
+    RpcNotFound(String),
+
     #[error("Invalid path parameter: {0}")]
     InvalidPathParam(String),
 
     #[error("Missing required field: {0}")]
     MissingField(String),
+
+    #[error("Internal error: {0}")]
+    InternalError(String),
+
+    #[error("No converter configured for JSON/Protobuf conversion")]
+    NoConverter,
 }
 
 /// Result type for gateway operations
@@ -92,6 +100,33 @@ impl GatewayError {
                 title: "RPC Call Failed".to_string(),
                 status: 500,
                 detail: Some(msg.clone()),
+                instance: None,
+                quill_proto_type: None,
+                quill_proto_detail_base64: None,
+            },
+            GatewayError::RpcNotFound(msg) => ProblemDetails {
+                type_uri: "urn:quill:rest-gateway:rpc-not-found".to_string(),
+                title: "RPC Not Found".to_string(),
+                status: 404,
+                detail: Some(msg.clone()),
+                instance: None,
+                quill_proto_type: None,
+                quill_proto_detail_base64: None,
+            },
+            GatewayError::InternalError(msg) => ProblemDetails {
+                type_uri: "urn:quill:rest-gateway:internal-error".to_string(),
+                title: "Internal Gateway Error".to_string(),
+                status: 500,
+                detail: Some(msg.clone()),
+                instance: None,
+                quill_proto_type: None,
+                quill_proto_detail_base64: None,
+            },
+            GatewayError::NoConverter => ProblemDetails {
+                type_uri: "urn:quill:rest-gateway:no-converter".to_string(),
+                title: "Converter Not Configured".to_string(),
+                status: 500,
+                detail: Some("No message converter configured for JSON/Protobuf conversion".to_string()),
                 instance: None,
                 quill_proto_type: None,
                 quill_proto_detail_base64: None,

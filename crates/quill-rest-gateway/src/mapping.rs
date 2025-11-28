@@ -136,6 +136,11 @@ impl UrlTemplate {
             })
             .collect()
     }
+
+    /// Check if a path matches this template (without extracting parameters)
+    pub fn matches(&self, path: &str) -> bool {
+        self.match_path(path).is_some()
+    }
 }
 
 /// HTTP method mapping for a specific RPC method
