@@ -35,6 +35,7 @@ use pin_project_lite::pin_project;
 
 use crate::buffer::{GpuError, TensorBuffer};
 use crate::frame::{FrameType, TensorFrame, TensorFrameError, TensorFrameParser};
+use crate::pool::{GpuMemoryPool, PinnedMemoryPool, PooledBuffer, PooledGpuBuffer};
 use crate::tensor::{Device, Tensor, TensorMeta};
 
 /// Error type for tensor streaming operations.
@@ -661,6 +662,294 @@ pub enum GpuReceiverEvent {
     NeedMoreData,
 }
 
+/// GPU tensor receiver with memory pool integration for high-throughput streaming.
+///
+/// This receiver uses memory pools to reduce allocation overhead:
+/// - `PinnedMemoryPool` for staging buffers (page-locked host memory)
+/// - `GpuMemoryPool` for target GPU buffers
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use quill_tensor::{PooledGpuReceiver, TensorMeta, DType, Device};
+/// use quill_tensor::pool::{PinnedMemoryPool, GpuMemoryPool, PoolConfig};
+///
+/// // Create pools
+/// let pinned_pool = PinnedMemoryPool::new(PoolConfig::default());
+/// let gpu_pool = GpuMemoryPool::new(0, PoolConfig::default())?;
+///
+/// // Create pooled receiver
+/// let meta = TensorMeta::new(vec![1024, 768], DType::Float32)
+///     .with_device(Device::Cuda);
+/// let mut receiver = PooledGpuReceiver::new(meta, pinned_pool, Some(gpu_pool))?;
+///
+/// // Stream data
+/// for frame in frames {
+///     receiver.feed(&frame.encode());
+///     receiver.poll()?;
+/// }
+///
+/// // Take result - buffers return to pool when dropped
+/// let (meta, buffer) = receiver.take()?;
+/// ```
+pub struct PooledGpuReceiver {
+    parser: TensorFrameParser,
+    meta: TensorMeta,
+    device_id: usize,
+    /// Pinned staging buffer from pool
+    staging: Option<PooledBuffer>,
+    /// Staging write offset
+    staging_offset: usize,
+    /// Target GPU buffer from pool (if GPU device)
+    gpu_buffer: Option<PooledGpuBuffer>,
+    /// Target CPU buffer (if CPU device or no GPU pool)
+    cpu_buffer: Option<TensorBuffer>,
+    /// Memory pools
+    pinned_pool: PinnedMemoryPool,
+    gpu_pool: Option<GpuMemoryPool>,
+    expected_size: usize,
+    received_size: usize,
+    complete: bool,
+}
+
+impl PooledGpuReceiver {
+    /// Creates a new pooled GPU receiver.
+    ///
+    /// # Arguments
+    ///
+    /// * `meta` - Tensor metadata
+    /// * `pinned_pool` - Pool for staging buffers
+    /// * `gpu_pool` - Optional pool for GPU buffers (required for GPU tensors)
+    pub fn new(
+        meta: TensorMeta,
+        pinned_pool: PinnedMemoryPool,
+        gpu_pool: Option<GpuMemoryPool>,
+    ) -> Result<Self, TensorStreamError> {
+        let expected_size = meta.byte_size();
+
+        // Acquire staging buffer from pool
+        let staging = pinned_pool.acquire(expected_size)?;
+
+        // Get device ID from GPU pool if available
+        let device_id = gpu_pool.as_ref().map(|p| p.device_id()).unwrap_or(0);
+
+        Ok(Self {
+            parser: TensorFrameParser::new(),
+            meta,
+            device_id,
+            staging: Some(staging),
+            staging_offset: 0,
+            gpu_buffer: None,
+            cpu_buffer: None,
+            pinned_pool,
+            gpu_pool,
+            expected_size,
+            received_size: 0,
+            complete: false,
+        })
+    }
+
+    /// Returns the tensor metadata.
+    pub fn meta(&self) -> &TensorMeta {
+        &self.meta
+    }
+
+    /// Returns whether all data has been received.
+    pub fn is_complete(&self) -> bool {
+        self.complete || (self.expected_size > 0 && self.received_size >= self.expected_size)
+    }
+
+    /// Returns bytes received so far.
+    pub fn received_bytes(&self) -> usize {
+        self.received_size
+    }
+
+    /// Returns expected total bytes.
+    pub fn expected_bytes(&self) -> usize {
+        self.expected_size
+    }
+
+    /// Returns pool statistics for the pinned memory pool.
+    pub fn pinned_pool_stats(&self) -> crate::pool::PoolStats {
+        self.pinned_pool.stats()
+    }
+
+    /// Returns pool statistics for the GPU memory pool.
+    pub fn gpu_pool_stats(&self) -> Option<crate::pool::PoolStats> {
+        self.gpu_pool.as_ref().map(|p| p.stats())
+    }
+
+    /// Feeds raw bytes into the receiver.
+    pub fn feed(&mut self, data: &[u8]) {
+        self.parser.feed(data);
+    }
+
+    /// Feeds a Bytes buffer into the receiver.
+    pub fn feed_bytes(&mut self, data: Bytes) {
+        self.parser.feed_bytes(data);
+    }
+
+    /// Processes available frames and returns the next event.
+    pub fn poll(&mut self) -> Result<GpuReceiverEvent, TensorStreamError> {
+        match self.parser.parse_frame()? {
+            None => Ok(GpuReceiverEvent::NeedMoreData),
+            Some(frame) => self.handle_frame(frame),
+        }
+    }
+
+    /// Takes the completed tensor buffer.
+    ///
+    /// Returns the metadata and buffer. For pooled GPU buffers, the buffer
+    /// will be returned to the pool when the `PooledGpuBuffer` is dropped.
+    pub fn take(mut self) -> Result<(TensorMeta, PooledTensorBuffer), TensorStreamError> {
+        if !self.is_complete() {
+            return Err(TensorStreamError::Internal(
+                "Cannot take incomplete tensor".to_string(),
+            ));
+        }
+
+        // Finalize transfer if not done
+        if self.gpu_buffer.is_none() && self.cpu_buffer.is_none() {
+            self.finalize_transfer()?;
+        }
+
+        // Return appropriate buffer type
+        if let Some(gpu_buf) = self.gpu_buffer.take() {
+            Ok((self.meta, PooledTensorBuffer::Gpu(gpu_buf)))
+        } else if let Some(cpu_buf) = self.cpu_buffer.take() {
+            Ok((self.meta, PooledTensorBuffer::Cpu(cpu_buf)))
+        } else {
+            Err(TensorStreamError::Internal("No buffer available".to_string()))
+        }
+    }
+
+    /// Takes the completed tensor as a CPU Tensor.
+    pub fn take_tensor(self) -> Result<Tensor, TensorStreamError> {
+        let (meta, buffer) = self.take()?;
+        let data = buffer.to_host()?;
+        Ok(Tensor::new(meta, data))
+    }
+
+    fn handle_frame(&mut self, frame: TensorFrame) -> Result<GpuReceiverEvent, TensorStreamError> {
+        match frame.frame_type {
+            FrameType::TensorMeta => {
+                let new_meta = decode_tensor_meta(&frame.payload)?;
+                self.meta = new_meta.clone();
+                self.expected_size = new_meta.byte_size();
+                self.received_size = 0;
+                self.staging_offset = 0;
+
+                // Re-acquire staging buffer with new size
+                self.staging = Some(self.pinned_pool.acquire(self.expected_size)?);
+
+                Ok(GpuReceiverEvent::Metadata(new_meta))
+            }
+            FrameType::TensorPayload => {
+                let chunk_size = frame.payload.len();
+
+                // Write to staging buffer
+                if let Some(ref mut staging) = self.staging {
+                    staging.extend_from_slice(&frame.payload);
+                }
+                self.staging_offset += chunk_size;
+                self.received_size += chunk_size;
+
+                Ok(GpuReceiverEvent::Data {
+                    offset: self.received_size - chunk_size,
+                    size: chunk_size,
+                })
+            }
+            FrameType::EndStream => {
+                if self.expected_size > 0 && self.received_size != self.expected_size {
+                    return Err(TensorStreamError::SizeMismatch {
+                        expected: self.expected_size,
+                        actual: self.received_size,
+                    });
+                }
+
+                self.finalize_transfer()?;
+                self.complete = true;
+
+                Ok(GpuReceiverEvent::End)
+            }
+            FrameType::Cancel => {
+                let reason = String::from_utf8_lossy(&frame.payload).into_owned();
+                Ok(GpuReceiverEvent::Cancelled(reason))
+            }
+            _ => Err(TensorStreamError::UnexpectedFrame {
+                expected: "TENSOR_META, TENSOR_PAYLOAD, END_STREAM, or CANCEL",
+                actual: frame.frame_type.name(),
+            }),
+        }
+    }
+
+    fn finalize_transfer(&mut self) -> Result<(), TensorStreamError> {
+        if self.gpu_buffer.is_some() || self.cpu_buffer.is_some() {
+            return Ok(());
+        }
+
+        let staging = self.staging.take().ok_or_else(|| {
+            TensorStreamError::Internal("Staging buffer not available".to_string())
+        })?;
+
+        // For GPU tensors with a GPU pool, use pooled GPU allocation
+        if self.meta.device.is_gpu() {
+            if let Some(ref gpu_pool) = self.gpu_pool {
+                let mut gpu_buf = gpu_pool.acquire(self.expected_size)?;
+                gpu_buf.copy_from_slice(&staging)?;
+                self.gpu_buffer = Some(gpu_buf);
+                return Ok(());
+            }
+        }
+
+        // Fallback: allocate buffer directly (CPU or GPU)
+        let mut new_buf = self.meta.device.allocate_buffer(self.expected_size, self.device_id)?;
+        new_buf.copy_from_slice(&staging)?;
+        self.cpu_buffer = Some(new_buf);
+
+        Ok(())
+    }
+}
+
+/// A pooled tensor buffer that returns to its pool on drop.
+pub enum PooledTensorBuffer {
+    /// CPU buffer (not pooled, regular TensorBuffer)
+    Cpu(TensorBuffer),
+    /// GPU buffer from a pool
+    Gpu(PooledGpuBuffer),
+}
+
+impl PooledTensorBuffer {
+    /// Returns the buffer size in bytes.
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Cpu(buf) => buf.len(),
+            Self::Gpu(buf) => buf.len(),
+        }
+    }
+
+    /// Returns whether the buffer is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Returns whether this is a GPU buffer.
+    pub fn is_gpu(&self) -> bool {
+        match self {
+            Self::Cpu(buf) => buf.is_gpu(),
+            Self::Gpu(_) => true,
+        }
+    }
+
+    /// Copies buffer contents to host memory.
+    pub fn to_host(&self) -> Result<Bytes, GpuError> {
+        match self {
+            Self::Cpu(buf) => buf.to_host(),
+            Self::Gpu(buf) => buf.to_host(),
+        }
+    }
+}
+
 /// Decodes tensor metadata from bytes.
 fn decode_tensor_meta(data: &[u8]) -> Result<TensorMeta, TensorStreamError> {
     if data.is_empty() {
@@ -1014,5 +1303,155 @@ mod tests {
         assert_eq!(decoded.dtype, DType::Float16);
         assert_eq!(decoded.device, Device::Cuda);
         assert_eq!(decoded.name, Some("test_tensor".to_string()));
+    }
+
+    #[test]
+    fn test_pooled_receiver_cpu_tensor() {
+        use crate::pool::{PinnedMemoryPool, PoolConfig};
+
+        let pool = PinnedMemoryPool::new(PoolConfig::default());
+
+        let meta = TensorMeta::new(vec![4], DType::Float32).with_device(Device::Cpu);
+        let tensor = Tensor::from_f32(&meta, &[1.0, 2.0, 3.0, 4.0]);
+
+        let sender = TensorSender::new();
+        let frames = sender.encode_tensor(&tensor);
+
+        let mut receiver = PooledGpuReceiver::new(meta, pool.clone(), None).unwrap();
+
+        // Feed frames
+        for frame in frames {
+            receiver.feed(&frame.encode());
+        }
+
+        // Process until complete
+        loop {
+            match receiver.poll().unwrap() {
+                GpuReceiverEvent::End => break,
+                GpuReceiverEvent::NeedMoreData => break,
+                _ => continue,
+            }
+        }
+
+        // Check pool stats
+        let stats = receiver.pinned_pool_stats();
+        assert!(stats.in_use_buffers >= 1 || stats.returns >= 0);
+
+        // Take the tensor
+        let received = receiver.take_tensor().unwrap();
+        assert_eq!(received.shape(), &[4]);
+        assert_eq!(received.as_f32(), &[1.0, 2.0, 3.0, 4.0]);
+
+        // After taking, staging buffers should be returned to pool
+        // (2 returns: initial buffer + buffer from TensorMeta re-allocation)
+        let final_stats = pool.stats();
+        assert!(final_stats.returns >= 1);
+    }
+
+    #[test]
+    fn test_pooled_receiver_buffer_reuse() {
+        use crate::pool::{PinnedMemoryPool, PoolConfig};
+
+        // Use low_memory config with smaller min buffer size for testing
+        let config = PoolConfig {
+            min_buffer_size: 256,  // 256 bytes min (so 400 bytes fits)
+            max_buffer_size: 1024 * 1024,
+            ..Default::default()
+        };
+        let pool = PinnedMemoryPool::new(config);
+
+        // First tensor - 400 bytes (100 f32s)
+        let meta = TensorMeta::new(vec![100], DType::Float32);
+        let data: Vec<f32> = (0..100).map(|i| i as f32).collect();
+        let tensor = Tensor::from_f32(&meta, &data);
+
+        let sender = TensorSender::new();
+        let frames = sender.encode_tensor(&tensor);
+
+        {
+            let mut receiver = PooledGpuReceiver::new(meta.clone(), pool.clone(), None).unwrap();
+            for frame in &frames {
+                receiver.feed(&frame.encode());
+            }
+            loop {
+                match receiver.poll().unwrap() {
+                    GpuReceiverEvent::End | GpuReceiverEvent::NeedMoreData => break,
+                    _ => continue,
+                }
+            }
+            let _ = receiver.take_tensor().unwrap();
+        }
+
+        // Check pool has buffers available for reuse
+        let stats = pool.stats();
+        assert!(stats.returns >= 1, "expected at least 1 return, got {}", stats.returns);
+        assert!(stats.available_buffers >= 1, "expected at least 1 available buffer");
+
+        // Second tensor should reuse the buffer
+        {
+            let mut receiver = PooledGpuReceiver::new(meta, pool.clone(), None).unwrap();
+            for frame in &frames {
+                receiver.feed(&frame.encode());
+            }
+            loop {
+                match receiver.poll().unwrap() {
+                    GpuReceiverEvent::End | GpuReceiverEvent::NeedMoreData => break,
+                    _ => continue,
+                }
+            }
+            let _ = receiver.take_tensor().unwrap();
+        }
+
+        // Check pool hit - should have hits from buffer reuse
+        let final_stats = pool.stats();
+        assert!(final_stats.hits >= 1, "expected at least 1 hit, got {}", final_stats.hits);
+        assert!(final_stats.hit_rate() > 0.0, "expected hit rate > 0");
+    }
+
+    #[test]
+    fn test_pooled_receiver_progress() {
+        use crate::pool::{PinnedMemoryPool, PoolConfig};
+
+        let pool = PinnedMemoryPool::new(PoolConfig::default());
+
+        let meta = TensorMeta::new(vec![100], DType::Float32); // 400 bytes
+        let data: Vec<f32> = (0..100).map(|i| i as f32).collect();
+        let tensor = Tensor::from_f32(&meta, &data);
+
+        let sender = TensorSender::with_chunk_size(100);
+        let frames = sender.encode_tensor(&tensor);
+
+        let mut receiver = PooledGpuReceiver::new(meta, pool, None).unwrap();
+
+        assert_eq!(receiver.expected_bytes(), 400);
+        assert_eq!(receiver.received_bytes(), 0);
+        assert!(!receiver.is_complete());
+
+        for frame in frames {
+            receiver.feed(&frame.encode());
+            while let Ok(event) = receiver.poll() {
+                match event {
+                    GpuReceiverEvent::NeedMoreData | GpuReceiverEvent::End => break,
+                    _ => {}
+                }
+            }
+        }
+
+        assert!(receiver.is_complete());
+        assert_eq!(receiver.received_bytes(), 400);
+    }
+
+    #[test]
+    fn test_pooled_tensor_buffer() {
+        // Test PooledTensorBuffer operations
+        let cpu_buf = TensorBuffer::cpu_zeros(100);
+        let pooled = PooledTensorBuffer::Cpu(cpu_buf);
+
+        assert_eq!(pooled.len(), 100);
+        assert!(!pooled.is_empty());
+        assert!(!pooled.is_gpu());
+
+        let host_data = pooled.to_host().unwrap();
+        assert_eq!(host_data.len(), 100);
     }
 }

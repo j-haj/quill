@@ -474,7 +474,7 @@ service ImageService {
 - [x] Comprehensive README with API reference
 - [x] Complete Python bindings documentation (docs/python-bindings.md)
 
-### Phase 19: Zero-Copy GPU Tensor Streaming (Phase 19.1 ✅)
+### Phase 19: Zero-Copy GPU Tensor Streaming (Phase 19.3 ✅)
 **Goal**: Enable direct network-to-GPU tensor transfers, bypassing CPU serialization for massive ML inference workloads.
 
 **Phase 19.1: Foundation** (cudarc integration) ✅:
@@ -500,11 +500,17 @@ service ImageService {
 - [x] 5 new streaming tests (46 total quill-tensor tests)
 - [ ] GPU memory pressure signaling via flow control (future)
 
-**Phase 19.3: Performance Optimization** (Planned):
-- [ ] Pinned (page-locked) memory pools for DMA transfers
-- [ ] GPU memory pooling and buffer reuse
-- [ ] Async DMA transfers with CUDA streams
-- [ ] Multi-GPU support with device routing
+**Phase 19.3: Performance Optimization** ✅:
+- [x] `PinnedMemoryPool` for page-locked host memory with size-class bucketing
+- [x] `GpuMemoryPool` for GPU buffer reuse to avoid allocation latency
+- [x] `PoolConfig` with default, high_throughput, and low_memory presets
+- [x] `PoolStats` for monitoring hits/misses/returns/drops with hit_rate()
+- [x] `PooledGpuReceiver` with integrated memory pool support
+- [x] `PooledTensorBuffer` RAII wrapper for automatic pool returns
+- [x] 60 quill-tensor tests (14 new pool tests)
+- [x] Comprehensive memory pools documentation in docs/gpu-streaming.md
+- [ ] Async DMA transfers with CUDA streams (future)
+- [ ] Multi-GPU device routing (future)
 
 **Phase 19.4: ML Framework Integration** (Planned):
 - [ ] DLPack protocol for PyTorch/JAX interop
@@ -568,8 +574,9 @@ Flags: DATA (0x01), END_STREAM (0x02), CANCEL (0x04), CREDIT (0x08)
 - `crates/quill-tensor/src/dtype.rs` - ML data types (f32, f16, bf16, etc.)
 - `crates/quill-tensor/src/tensor.rs` - Tensor, TensorMeta, TensorView types
 - `crates/quill-tensor/src/buffer.rs` - TensorBuffer, CudaBuffer, GpuStatus for GPU support
+- `crates/quill-tensor/src/pool.rs` - PinnedMemoryPool, GpuMemoryPool for efficient buffer reuse
 - `crates/quill-tensor/src/frame.rs` - Zero-copy TensorFrame protocol
-- `crates/quill-tensor/src/stream.rs` - TensorStream, TensorSender, TensorReceiver
+- `crates/quill-tensor/src/stream.rs` - TensorStream, TensorSender, TensorReceiver, PooledGpuReceiver
 - `crates/quill-tensor/src/token.rs` - Token, TokenBatch, TokenStream for LLM
 - `proto/quill/tensor.proto` - Tensor protobuf definitions
 - `proto/quill/inference.proto` - LLM inference service definitions

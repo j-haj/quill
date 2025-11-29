@@ -364,9 +364,149 @@ For maximum PCIe throughput:
 - **Minimum for efficiency**: 1 MB
 - **Default Quill chunk**: 64 KB (can be configured)
 
-### 4. Consider Pinned Memory (Future)
+### 4. Use Memory Pools
 
-Phase 19.3 will add pinned memory pools for faster DMA transfers.
+For high-throughput streaming, use memory pools to avoid repeated allocations:
+
+```rust
+use quill_tensor::pool::{PinnedMemoryPool, GpuMemoryPool, PoolConfig};
+
+// Create pools once
+let pinned_pool = PinnedMemoryPool::new(PoolConfig::default());
+let gpu_pool = GpuMemoryPool::new(0, PoolConfig::default())?;
+
+// Reuse buffers from pool
+for batch in batches {
+    let mut buffer = gpu_pool.acquire(batch_size)?;
+    buffer.copy_from_slice(&batch)?;
+    process(&buffer)?;
+    // Buffer returns to pool when dropped
+}
+```
+
+## Memory Pools
+
+Memory pools reduce allocation overhead during high-throughput tensor streaming by reusing buffers.
+
+### PinnedMemoryPool
+
+Pools page-locked (pinned) host memory for efficient DMA transfers:
+
+```rust
+use quill_tensor::pool::{PinnedMemoryPool, PoolConfig};
+
+// Create pool with default configuration
+let pool = PinnedMemoryPool::new(PoolConfig::default());
+
+// Acquire buffer from pool
+let mut buffer = pool.acquire(1024 * 1024)?; // 1MB
+buffer.extend_from_slice(&data);
+
+// Buffer automatically returns to pool when dropped
+drop(buffer);
+
+// Check pool statistics
+let stats = pool.stats();
+println!("Hit rate: {:.1}%", stats.hit_rate());
+```
+
+### GpuMemoryPool
+
+Pools GPU memory buffers to avoid cudaMalloc/cudaFree latency:
+
+```rust
+use quill_tensor::pool::{GpuMemoryPool, PoolConfig};
+
+// Create pool for GPU device 0
+let pool = GpuMemoryPool::new(0, PoolConfig::default())?;
+
+// Acquire GPU buffer
+let mut buffer = pool.acquire(1024 * 1024)?;
+buffer.copy_from_slice(&host_data)?;
+
+// Buffer returns to pool when dropped
+```
+
+### PoolConfig
+
+Configure pool behavior:
+
+```rust
+use quill_tensor::pool::PoolConfig;
+
+// Default configuration
+let config = PoolConfig::default();
+// max_pool_size: 256 MB
+// min_buffer_size: 64 KB
+// max_buffer_size: 64 MB
+// size_classes: 16 (power-of-2 bucketing)
+
+// High-throughput configuration
+let config = PoolConfig::high_throughput();
+// max_pool_size: 512 MB
+// min_buffer_size: 1 MB
+// preallocate: true
+
+// Low-memory configuration
+let config = PoolConfig::low_memory();
+// max_pool_size: 64 MB
+// min_buffer_size: 16 KB
+```
+
+### PooledGpuReceiver
+
+For high-throughput streaming, use `PooledGpuReceiver` which integrates with memory pools:
+
+```rust
+use quill_tensor::{PooledGpuReceiver, TensorMeta, DType, Device};
+use quill_tensor::pool::{PinnedMemoryPool, GpuMemoryPool, PoolConfig};
+
+// Create pools (typically done once at startup)
+let pinned_pool = PinnedMemoryPool::new(PoolConfig::default());
+let gpu_pool = GpuMemoryPool::new(0, PoolConfig::default())?;
+
+// Create pooled receiver
+let meta = TensorMeta::new(vec![1024, 768], DType::Float32)
+    .with_device(Device::Cuda);
+let mut receiver = PooledGpuReceiver::new(meta, pinned_pool, Some(gpu_pool))?;
+
+// Stream tensor data
+for frame in incoming_frames {
+    receiver.feed(&frame.encode());
+    while let Ok(event) = receiver.poll() {
+        match event {
+            GpuReceiverEvent::End => break,
+            GpuReceiverEvent::NeedMoreData => break,
+            _ => continue,
+        }
+    }
+}
+
+// Check pool statistics
+println!("Pinned pool hit rate: {:.1}%", receiver.pinned_pool_stats().hit_rate());
+if let Some(gpu_stats) = receiver.gpu_pool_stats() {
+    println!("GPU pool hit rate: {:.1}%", gpu_stats.hit_rate());
+}
+
+// Take result - buffers return to pool when dropped
+let (meta, buffer) = receiver.take()?;
+```
+
+### Pool Statistics
+
+Monitor pool efficiency:
+
+```rust
+let stats = pool.stats();
+
+println!("Available buffers: {}", stats.available_buffers);
+println!("In-use buffers: {}", stats.in_use_buffers);
+println!("Pool bytes: {}", stats.pool_bytes);
+println!("Hits: {} ({:.1}%)", stats.hits, stats.hit_rate());
+println!("Misses: {}", stats.misses);
+println!("Returns: {}", stats.returns);
+println!("Drops: {}", stats.drops);
+```
 
 ## Build Configuration
 
@@ -432,8 +572,9 @@ fn main() {
 
 ## Future Enhancements
 
-- **Phase 19.3**: Memory pools, async DMA, pinned memory
 - **Phase 19.4**: DLPack for PyTorch/JAX interop, Python bindings
+- **Async DMA**: Asynchronous memory transfers for overlapping compute
+- **Multi-stream**: Concurrent transfers and compute on different CUDA streams
 
 ## See Also
 

@@ -40,6 +40,7 @@
 pub mod buffer;
 pub mod dtype;
 pub mod frame;
+pub mod pool;
 pub mod stream;
 pub mod tensor;
 pub mod token;
@@ -47,8 +48,12 @@ pub mod token;
 pub use buffer::{GpuError, GpuResult, GpuStatus, TensorBuffer};
 pub use dtype::DType;
 pub use frame::{FrameType, TensorFrame, TensorFrameError, TensorFrameParser};
+pub use pool::{
+    GpuMemoryPool, PinnedMemoryPool, PoolConfig, PoolStats, PooledBuffer, PooledGpuBuffer,
+};
 pub use stream::{
-    GpuReceiverEvent, GpuTensorReceiver, TensorChunk, TensorReceiver, TensorSender, TensorStream,
+    GpuReceiverEvent, GpuTensorReceiver, PooledGpuReceiver, PooledTensorBuffer, TensorChunk,
+    TensorReceiver, TensorSender, TensorStream,
 };
 pub use tensor::{Device, Tensor, TensorMeta, TensorView};
 pub use token::{Token, TokenBatch, TokenBatchBuilder, TokenStream};
