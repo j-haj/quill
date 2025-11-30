@@ -1,0 +1,46 @@
+[package]
+name = "quill-fuzz"
+version = "0.0.0"
+authors = ["Automatically generated"]
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+bytes = "1.7"
+serde_json = "1.0"
+
+[dependencies.quill-core]
+path = "../crates/quill-core"
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "fuzz_frame_parser"
+path = "fuzz_targets/fuzz_frame_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_problem_details"
+path = "fuzz_targets/fuzz_problem_details.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_varint"
+path = "fuzz_targets/fuzz_varint.rs"
+test = false
+doc = false
+bench = false

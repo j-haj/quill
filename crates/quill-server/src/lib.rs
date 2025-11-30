@@ -15,6 +15,7 @@ pub mod middleware;
 pub mod observability;
 pub mod request_stream;
 pub mod router;
+pub mod security;
 pub mod server;
 pub mod streaming;
 
@@ -24,5 +25,9 @@ pub use handler::RpcHandler;
 pub use observability::{check_dependency, DependencyStatus, HealthStatus, ObservabilityCollector};
 pub use request_stream::RequestFrameStream;
 pub use router::{parse_rpc_path, RpcRouter};
+pub use security::{
+    is_early_data_request, CompressionExclusions, IdempotencyChecker, EARLY_DATA_HEADER,
+    STATUS_TOO_EARLY,
+};
 pub use server::{HttpVersion, QuillServer, ServerBuilder, ServerConfig};
 pub use streaming::{FramedResponseStream, RpcResponse};

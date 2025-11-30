@@ -571,6 +571,21 @@ service ImageService {
 - [x] 20 codegen tests total (4 new client streaming tests)
 - [x] All 363+ tests passing
 
+### Phase 25: Fuzzing & Security Hardening ✅
+- [x] cargo-fuzz infrastructure setup (`fuzz/` directory)
+- [x] Frame parser fuzz target (`fuzz_frame_parser`)
+- [x] Problem Details JSON fuzz target (`fuzz_problem_details`)
+- [x] Varint encoding/decoding fuzz target (`fuzz_varint`)
+- [x] 0-RTT replay protection (`IdempotencyChecker`)
+- [x] HTTP 425 "Too Early" response for non-idempotent methods
+- [x] Early-Data header detection (`is_early_data_request`)
+- [x] Compression side-channel protection (`CompressionExclusions`)
+- [x] Security module with 5 tests (`quill-server/src/security.rs`)
+- [x] Public varint functions (`encode_varint`, `decode_varint`)
+- [x] Security documentation (`docs/security.md`)
+- [x] Fuzz testing documentation (`fuzz/README.md`)
+- [x] 377 total tests passing (14 new security tests)
+
 ### Current Implementation Notes
 
 **Streaming Architecture**: Implemented using chunked transfer encoding over HTTP/1.1 and native HTTP/2 streams. Response streams use `UnsyncBoxBody` for efficient frame streaming. Request streams are currently buffered before transmission. HTTP/2 multiplexing enables concurrent streams over a single connection.
@@ -597,6 +612,7 @@ Flags: DATA (0x01), END_STREAM (0x02), CANCEL (0x04), CREDIT (0x08)
 - `crates/quill-server/src/request_stream.rs` - Server request streaming
 - `crates/quill-server/src/middleware.rs` - Compression and tracing utilities
 - `crates/quill-server/src/observability.rs` - Metrics collection and health checks
+- `crates/quill-server/src/security.rs` - 0-RTT protection and compression side-channel mitigation
 - `crates/quill-server/src/h3_server.rs` - HTTP/3 server with RPC routing
 - `crates/quill-transport/src/classic.rs` - HTTP/1.1 transport (Classic profile)
 - `crates/quill-transport/src/turbo.rs` - HTTP/2 transport (Turbo profile)
@@ -648,6 +664,8 @@ Flags: DATA (0x01), END_STREAM (0x02), CANCEL (0x04), CREDIT (0x08)
 - `docs/rest-gateway.md` - REST gateway with OpenAPI guide
 - `docs/python-bindings.md` - Python bindings guide with API reference
 - `docs/gpu-streaming.md` - GPU tensor streaming guide with CUDA integration
+- `docs/security.md` - Security guide (0-RTT protection, fuzzing, TLS)
+- `fuzz/` - Fuzz testing infrastructure and targets
 - `examples/README.md` - Comprehensive examples guide
 
 **CLI**: `quill` binary provides code generation, RPC calls, benchmarking, compatibility checking, and payload decoding. See `crates/quill-cli/README.md` for usage.
@@ -681,4 +699,4 @@ Flags: DATA (0x01), END_STREAM (0x02), CANCEL (0x04), CREDIT (0x08)
 
 **Python Bindings**: PyO3-based Python package (`quill`) for ML inference and tensor streaming. Provides PyDType (ML data types), PyTensor/PyTensorMeta (NumPy integration), PyToken/PyTokenBatch (LLM token streaming), and PyQuillClient (RPC calls). Build with maturin: `cd crates/quill-python && maturin develop`. Tests require `python-tests` feature flag. See `docs/python-bindings.md` for comprehensive guide.
 
-**Tests**: 363 tests passing across all crates and examples (unit tests, integration tests, middleware tests, CLI tests, retry/circuit breaker tests, observability tests, gRPC bridge tests with streaming, gRPC bridge example tests, HTTP/3 transport tests, HTTP/3 datagram tests, HTTP/3 datagram example tests, HTTP/3 example tests (h3-echo, h3-streaming), WebTransport transport tests, WebTransport example tests, REST gateway tests, REST gateway streaming tests (SSE, NDJSON, chunked), authentication tests, CORS tests, rate limit tests, tensor tests, GPU buffer tests, GPU streaming tests, DLPack tests, LLM inference example tests, Python binding tests, and benchmark tests)
+**Tests**: 377 tests passing across all crates and examples (unit tests, integration tests, middleware tests, CLI tests, retry/circuit breaker tests, observability tests, gRPC bridge tests with streaming, gRPC bridge example tests, HTTP/3 transport tests, HTTP/3 datagram tests, HTTP/3 datagram example tests, HTTP/3 example tests (h3-echo, h3-streaming), WebTransport transport tests, WebTransport example tests, REST gateway tests, REST gateway streaming tests (SSE, NDJSON, chunked), authentication tests, CORS tests, rate limit tests, tensor tests, GPU buffer tests, GPU streaming tests, DLPack tests, LLM inference example tests, Python binding tests, security tests (0-RTT, compression exclusions), and benchmark tests)

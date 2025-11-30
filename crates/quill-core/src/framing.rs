@@ -193,7 +193,7 @@ pub enum FrameError {
 }
 
 /// Encode a u64 as a protobuf varint
-fn encode_varint(mut value: u64, buf: &mut BytesMut) {
+pub fn encode_varint(mut value: u64, buf: &mut BytesMut) {
     loop {
         if value < 0x80 {
             buf.put_u8(value as u8);
@@ -206,7 +206,7 @@ fn encode_varint(mut value: u64, buf: &mut BytesMut) {
 }
 
 /// Decode a protobuf varint from a cursor
-fn decode_varint<B: Buf>(buf: &mut B) -> Option<u64> {
+pub fn decode_varint<B: Buf>(buf: &mut B) -> Option<u64> {
     let mut value = 0u64;
     let mut shift = 0;
 
