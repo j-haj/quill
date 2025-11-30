@@ -1,6 +1,6 @@
 //! Quill server implementation
 
-use crate::router::RpcRouter;
+use crate::router::{RequestStream, RpcRouter};
 use crate::streaming::RpcResponse;
 use bytes::Bytes;
 use http::Request;
@@ -256,7 +256,7 @@ impl ServerBuilder {
         self
     }
 
-    /// Register a streaming handler for an RPC method
+    /// Register a streaming handler for an RPC method (server streaming)
     /// Path format: "{package}.{Service}/{Method}"
     pub fn register_streaming<F, Fut>(mut self, path: impl Into<String>, handler: F) -> Self
     where
@@ -264,6 +264,32 @@ impl ServerBuilder {
         Fut: Future<Output = Result<RpcResponse, QuillError>> + Send + 'static,
     {
         self.router.register(path, handler);
+        self
+    }
+
+    /// Register a client streaming handler
+    ///
+    /// The handler receives a stream of request messages and returns a single response.
+    /// Path format: "{package}.{Service}/{Method}"
+    pub fn register_client_streaming<F, Fut>(mut self, path: impl Into<String>, handler: F) -> Self
+    where
+        F: Fn(RequestStream) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<RpcResponse, QuillError>> + Send + 'static,
+    {
+        self.router.register_client_streaming(path, handler);
+        self
+    }
+
+    /// Register a bidirectional streaming handler
+    ///
+    /// The handler receives a stream of request messages and returns a stream of responses.
+    /// Path format: "{package}.{Service}/{Method}"
+    pub fn register_bidi_streaming<F, Fut>(mut self, path: impl Into<String>, handler: F) -> Self
+    where
+        F: Fn(RequestStream) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<RpcResponse, QuillError>> + Send + 'static,
+    {
+        self.router.register_bidi_streaming(path, handler);
         self
     }
 

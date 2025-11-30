@@ -8,19 +8,42 @@ use http::{Method, Request, Response, StatusCode};
 use http_body_util::{combinators::UnsyncBoxBody, BodyExt, Full, StreamBody};
 use hyper::body::{Frame as HyperFrame, Incoming};
 use quill_core::{Frame, ProblemDetails, QuillError};
+use crate::request_stream::RequestFrameStream;
 use crate::streaming::RpcResponse;
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use tokio_stream::Stream;
 
-/// Type alias for async handler functions (now returns RpcResponse for streaming support)
+/// Type alias for request stream (for client streaming)
+pub type RequestStream = Pin<Box<dyn Stream<Item = Result<Bytes, QuillError>> + Send>>;
+
+/// Type alias for async handler functions (returns RpcResponse for streaming support)
 pub type HandlerFn =
     Arc<dyn Fn(Bytes) -> Pin<Box<dyn Future<Output = Result<RpcResponse, QuillError>> + Send>> + Send + Sync>;
 
+/// Type alias for client streaming handlers (takes request stream, returns unary response)
+pub type ClientStreamingHandlerFn =
+    Arc<dyn Fn(RequestStream) -> Pin<Box<dyn Future<Output = Result<RpcResponse, QuillError>> + Send>> + Send + Sync>;
+
+/// Type alias for bidirectional streaming handlers (takes request stream, returns response stream)
+pub type BidiStreamingHandlerFn =
+    Arc<dyn Fn(RequestStream) -> Pin<Box<dyn Future<Output = Result<RpcResponse, QuillError>> + Send>> + Send + Sync>;
+
+/// Handler type enum for different streaming modes
+enum Handler {
+    /// Unary or server-streaming (request is collected upfront)
+    Unary(HandlerFn),
+    /// Client streaming (request is a stream)
+    ClientStreaming(ClientStreamingHandlerFn),
+    /// Bidirectional streaming (request is a stream, response is a stream)
+    Bidi(BidiStreamingHandlerFn),
+}
+
 /// RPC Router
 pub struct RpcRouter {
-    routes: HashMap<String, HandlerFn>,
+    routes: HashMap<String, Handler>,
 }
 
 impl RpcRouter {
@@ -39,7 +62,7 @@ impl RpcRouter {
         Fut: Future<Output = Result<RpcResponse, QuillError>> + Send + 'static,
     {
         let handler = Arc::new(move |req: Bytes| Box::pin(handler(req)) as Pin<Box<_>>);
-        self.routes.insert(path.into(), handler);
+        self.routes.insert(path.into(), Handler::Unary(handler));
     }
 
     /// Register a unary handler (convenience method that wraps response in RpcResponse::Unary)
@@ -56,6 +79,34 @@ impl RpcRouter {
                 Ok(RpcResponse::Unary(result))
             }
         });
+    }
+
+    /// Register a client streaming handler
+    ///
+    /// The handler receives a stream of request messages and returns a single response.
+    pub fn register_client_streaming<F, Fut>(&mut self, path: impl Into<String>, handler: F)
+    where
+        F: Fn(RequestStream) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<RpcResponse, QuillError>> + Send + 'static,
+    {
+        let handler: ClientStreamingHandlerFn = Arc::new(move |stream: RequestStream| {
+            Box::pin(handler(stream)) as Pin<Box<_>>
+        });
+        self.routes.insert(path.into(), Handler::ClientStreaming(handler));
+    }
+
+    /// Register a bidirectional streaming handler
+    ///
+    /// The handler receives a stream of request messages and returns a stream of responses.
+    pub fn register_bidi_streaming<F, Fut>(&mut self, path: impl Into<String>, handler: F)
+    where
+        F: Fn(RequestStream) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<RpcResponse, QuillError>> + Send + 'static,
+    {
+        let handler: BidiStreamingHandlerFn = Arc::new(move |stream: RequestStream| {
+            Box::pin(handler(stream)) as Pin<Box<_>>
+        });
+        self.routes.insert(path.into(), Handler::Bidi(handler));
     }
 
     /// Route an incoming request
@@ -87,20 +138,31 @@ impl RpcRouter {
             }
         };
 
-        // Read request body
-        let body = match Self::read_body(req.into_body()).await {
-            Ok(b) => b,
-            Err(e) => {
-                return Self::error_response(
-                    StatusCode::BAD_REQUEST,
-                    "Failed to read request body",
-                    Some(&e.to_string()),
-                )
+        // Dispatch based on handler type
+        let result = match handler {
+            Handler::Unary(handler) => {
+                // Read entire request body for unary/server-streaming
+                match Self::read_body(req.into_body()).await {
+                    Ok(body) => handler(body).await,
+                    Err(e) => {
+                        return Self::error_response(
+                            StatusCode::BAD_REQUEST,
+                            "Failed to read request body",
+                            Some(&e.to_string()),
+                        );
+                    }
+                }
+            }
+            Handler::ClientStreaming(handler) | Handler::Bidi(handler) => {
+                // Create request stream for client/bidi streaming
+                let request_stream = RequestFrameStream::new(req.into_body());
+                let boxed_stream: RequestStream = Box::pin(request_stream);
+                handler(boxed_stream).await
             }
         };
 
-        // Call handler
-        match handler(body).await {
+        // Handle result
+        match result {
             Ok(RpcResponse::Unary(response_bytes)) => {
                 // Unary response
                 Response::builder()

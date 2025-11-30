@@ -188,15 +188,67 @@ fn generate_route_handler(service_name: &str, method: &Method) -> proc_macro2::T
             }
         }
         MethodType::ClientStreaming => {
-            // Client streaming not yet supported - needs API updates
             quote! {
-                // TODO: Client streaming support
+                {
+                    let service = service.clone();
+                    builder = builder.register_client_streaming(
+                        #path,
+                        move |request_stream: quill_server::router::RequestStream| {
+                            let service = service.clone();
+                            async move {
+                                use futures::StreamExt;
+                                use prost::Message;
+
+                                // Map the byte stream to typed messages
+                                let typed_stream = request_stream.map(|result| {
+                                    result.and_then(|bytes| {
+                                        #input_type::decode(&bytes[..])
+                                            .map_err(|e| QuillError::Rpc(format!("Failed to decode: {}", e)))
+                                    })
+                                });
+
+                                let response = service.#method_name(Box::pin(typed_stream)).await?;
+                                Ok(RpcResponse::Unary(Bytes::from(response.encode_to_vec())))
+                            }
+                        },
+                    );
+                }
             }
         }
         MethodType::BidirectionalStreaming => {
-            // Bidirectional streaming not yet supported - needs API updates
             quote! {
-                // TODO: Bidirectional streaming support
+                {
+                    let service = service.clone();
+                    builder = builder.register_bidi_streaming(
+                        #path,
+                        move |request_stream: quill_server::router::RequestStream| {
+                            let service = service.clone();
+                            async move {
+                                use futures::StreamExt;
+                                use prost::Message;
+
+                                // Map the byte stream to typed messages
+                                let typed_stream = request_stream.map(|result| {
+                                    result.and_then(|bytes| {
+                                        #input_type::decode(&bytes[..])
+                                            .map_err(|e| QuillError::Rpc(format!("Failed to decode: {}", e)))
+                                    })
+                                });
+
+                                let response_stream = service.#method_name(Box::pin(typed_stream)).await?;
+
+                                // Map typed responses back to bytes
+                                let byte_stream = response_stream.map(|result| {
+                                    result.and_then(|msg| {
+                                        Ok(Bytes::from(msg.encode_to_vec()))
+                                    })
+                                });
+
+                                Ok(RpcResponse::Streaming(Box::pin(byte_stream)))
+                            }
+                        },
+                    );
+                }
             }
         }
     }
@@ -267,5 +319,125 @@ mod tests {
         assert!(code.is_some());
         let code = code.unwrap();
         assert!(code.contains("server_stream"));
+    }
+
+    #[test]
+    fn test_generate_server_with_client_streaming() {
+        let mut service = make_test_service();
+        service.methods.push(Method {
+            name: "ClientStream".to_string(),
+            proto_name: "ClientStream".to_string(),
+            comments: Default::default(),
+            input_type: "Request".to_string(),
+            output_type: "Response".to_string(),
+            input_proto_type: "Request".to_string(),
+            output_proto_type: "Response".to_string(),
+            options: Default::default(),
+            client_streaming: true,
+            server_streaming: false,
+        });
+
+        let config = QuillConfig::default();
+        let code = generate_server(&service, &config);
+
+        assert!(code.is_some());
+        let code = code.unwrap();
+        // Verify client streaming method is generated
+        assert!(code.contains("client_stream"));
+        // Verify register_client_streaming is used
+        assert!(code.contains("register_client_streaming"));
+        // Verify request_stream parameter
+        assert!(code.contains("request_stream"));
+    }
+
+    #[test]
+    fn test_generate_server_with_bidi_streaming() {
+        let mut service = make_test_service();
+        service.methods.push(Method {
+            name: "BidiStream".to_string(),
+            proto_name: "BidiStream".to_string(),
+            comments: Default::default(),
+            input_type: "Request".to_string(),
+            output_type: "Response".to_string(),
+            input_proto_type: "Request".to_string(),
+            output_proto_type: "Response".to_string(),
+            options: Default::default(),
+            client_streaming: true,
+            server_streaming: true,
+        });
+
+        let config = QuillConfig::default();
+        let code = generate_server(&service, &config);
+
+        assert!(code.is_some());
+        let code = code.unwrap();
+        // Verify bidi streaming method is generated
+        assert!(code.contains("bidi_stream"));
+        // Verify register_bidi_streaming is used
+        assert!(code.contains("register_bidi_streaming"));
+        // Verify request_stream parameter
+        assert!(code.contains("request_stream"));
+        // Verify response_stream is returned
+        assert!(code.contains("response_stream"));
+    }
+
+    #[test]
+    fn test_generate_server_all_streaming_types() {
+        let mut service = make_test_service();
+        // Server streaming
+        service.methods.push(Method {
+            name: "ServerStream".to_string(),
+            proto_name: "ServerStream".to_string(),
+            comments: Default::default(),
+            input_type: "Request".to_string(),
+            output_type: "Response".to_string(),
+            input_proto_type: "Request".to_string(),
+            output_proto_type: "Response".to_string(),
+            options: Default::default(),
+            client_streaming: false,
+            server_streaming: true,
+        });
+        // Client streaming
+        service.methods.push(Method {
+            name: "ClientStream".to_string(),
+            proto_name: "ClientStream".to_string(),
+            comments: Default::default(),
+            input_type: "Request".to_string(),
+            output_type: "Response".to_string(),
+            input_proto_type: "Request".to_string(),
+            output_proto_type: "Response".to_string(),
+            options: Default::default(),
+            client_streaming: true,
+            server_streaming: false,
+        });
+        // Bidi streaming
+        service.methods.push(Method {
+            name: "BidiStream".to_string(),
+            proto_name: "BidiStream".to_string(),
+            comments: Default::default(),
+            input_type: "Request".to_string(),
+            output_type: "Response".to_string(),
+            input_proto_type: "Request".to_string(),
+            output_proto_type: "Response".to_string(),
+            options: Default::default(),
+            client_streaming: true,
+            server_streaming: true,
+        });
+
+        let config = QuillConfig::default();
+        let code = generate_server(&service, &config);
+
+        assert!(code.is_some());
+        let code = code.unwrap();
+        // Verify all methods are generated
+        assert!(code.contains("unary_call"));
+        assert!(code.contains("server_stream"));
+        assert!(code.contains("client_stream"));
+        assert!(code.contains("bidi_stream"));
+        // Verify all registration methods are used
+        assert!(code.contains("builder = builder . register"));  // unary
+        assert!(code.contains("register_streaming"));  // server streaming
+        assert!(code.contains("register_client_streaming"));
+        assert!(code.contains("register_bidi_streaming"));
     }
 }

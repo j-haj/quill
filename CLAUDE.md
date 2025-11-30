@@ -548,6 +548,19 @@ service ImageService {
 - [x] 63 REST gateway tests (7 new streaming tests)
 - [x] Comprehensive streaming documentation in rest-gateway.md
 
+### Phase 23: Codegen Client/Bidi Streaming Support ✅
+- [x] `register_client_streaming` method on RpcRouter for client streaming handlers
+- [x] `register_bidi_streaming` method on RpcRouter for bidirectional streaming handlers
+- [x] Handler enum (Unary, ClientStreaming, Bidi) for type-safe handler dispatch
+- [x] RequestStream type alias for client streaming input (`Pin<Box<dyn Stream<Item = Result<Bytes, QuillError>> + Send>>`)
+- [x] ServerBuilder methods for client and bidi streaming registration
+- [x] Code generation for client streaming route handlers (request stream → unary response)
+- [x] Code generation for bidirectional streaming route handlers (request stream → response stream)
+- [x] Byte stream to typed message mapping in generated code
+- [x] Typed response to byte stream mapping for bidi streaming
+- [x] 16 codegen tests (3 new streaming tests)
+- [x] All 350+ tests passing
+
 ### Current Implementation Notes
 
 **Streaming Architecture**: Implemented using chunked transfer encoding over HTTP/1.1 and native HTTP/2 streams. Response streams use `UnsyncBoxBody` for efficient frame streaming. Request streams are currently buffered before transmission. HTTP/2 multiplexing enables concurrent streams over a single connection.
